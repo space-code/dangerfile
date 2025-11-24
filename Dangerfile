@@ -24,11 +24,13 @@ end
 # File checks
 # ==============================================================================
 
-has_app_changes = !git.modified_files.grep(/Sources/).empty?
-has_test_changes = !git.modified_files.grep(/Tests/).empty?
+test_files = git.modified_files + git.added_files
+has_test_changes = test_files.any? { |path| path =~ %r{^Tests/.*\.swift$} }
+has_app_changes = (git.modified_files + git.added_files).any? { |path| path =~ %r{^Sources/} }
+
 has_package_changes = git.modified_files.include?('Package.swift')
-has_readme_changes = git.modified_files.include?('README.md')
-has_docs_changes = !git.modified_files.grep(/\.md$/).empty?
+has_readme_changes  = git.modified_files.include?('README.md')
+has_docs_changes    = git.modified_files.grep(/\.md$/).any?
 
 # ==============================================================================
 # Tests
@@ -43,6 +45,35 @@ end
 added_swift_files = git.added_files.grep(/Sources\/.*\.swift$/)
 if added_swift_files.any? && !has_test_changes
   warn("New Swift files added but no tests. Consider adding tests for: #{added_swift_files.join(', ')}")
+end
+
+# All added/modified source files
+source_files = (git.modified_files + git.added_files)
+                 .grep(%r{^Sources/.*\.swift$})
+
+# All added/modified test files inside Tests/
+test_filenames = test_files
+                   .grep(%r{^Tests/.*\.swift$})
+                   .map { |p| File.basename(p) }
+                   .to_set
+
+missing_tests = []
+
+source_files.each do |path|
+  filename = File.basename(path, ".swift")
+  expected_test_file = "#{filename}Tests.swift"
+
+  unless test_filenames.include?(expected_test_file)
+    missing_tests << { file: filename, expected: expected_test_file }
+  end
+end
+
+if missing_tests.any?
+  list = missing_tests
+           .map { |m| "- `#{m[:file]}` → expected test file: `#{m[:expected]}`" }
+           .join("\n")
+
+  warn("Some source files are missing corresponding tests:\n#{list}")
 end
 
 # ==============================================================================
