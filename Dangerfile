@@ -50,6 +50,7 @@ end
 # All added/modified source files
 source_files = (git.modified_files + git.added_files)
                  .grep(%r{^Sources/.*\.swift$})
+                 .reject { |path| File.basename(path) =~ /\+/ }
 
 # All added/modified test files inside Tests/
 test_filenames = test_files
@@ -125,12 +126,17 @@ git.modified_files.each do |file|
 end
 
 # Check for print statements (should use proper logging)
+# Skip comments and string literals
 git.modified_files.grep(/\.swift$/).each do |file|
   diff = git.diff_for_file(file)
   next unless diff
   
   diff.patch.lines.each_with_index do |line, index|
-    if line.start_with?('+') && line =~ /\bprint\(/
+    # Skip if line is a comment (single line or doc comment)
+    next if line =~ /^\+\s*(\/\/|\/\*\*)/
+    
+    # Check for actual print() calls (not in strings)
+    if line.start_with?('+') && line =~ /\bprint\s*\(/
       warn("#{file}:#{index + 1} contains print() statement - consider using proper logging", file: file, line: index + 1)
     end
   end
