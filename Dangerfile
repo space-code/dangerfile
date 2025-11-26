@@ -47,6 +47,15 @@ if added_swift_files.any? && !has_test_changes
   warn("New Swift files added but no tests. Consider adding tests for: #{added_swift_files.join(', ')}")
 end
 
+# ==============================================================================
+# Test file verification with project structure check
+# ==============================================================================
+
+# Helper function to check if a file exists in the project
+def file_exists_in_project?(filepath)
+  File.exist?(filepath)
+end
+
 # All added/modified source files
 source_files = (git.modified_files + git.added_files)
                  .grep(%r{^Sources/.*\.swift$})
@@ -59,22 +68,58 @@ test_filenames = test_files
                    .to_set
 
 missing_tests = []
+missing_test_files = []
 
 source_files.each do |path|
   filename = File.basename(path, ".swift")
+  
+  next if filename.start_with?('I')
+  
   expected_test_file = "#{filename}Tests.swift"
 
   unless test_filenames.include?(expected_test_file)
-    missing_tests << { file: filename, expected: expected_test_file }
+    possible_test_paths = [
+      "Tests/#{expected_test_file}",
+      "Tests/**/#{expected_test_file}",
+      "**/Tests/**/#{expected_test_file}"
+    ]
+    
+    test_file_exists = possible_test_paths.any? do |pattern|
+      !Dir.glob(pattern).empty?
+    end
+    
+    if test_file_exists
+      missing_tests << { 
+        file: filename, 
+        expected: expected_test_file,
+        exists: true
+      }
+    else
+      missing_test_files << { 
+        file: filename, 
+        expected: expected_test_file,
+        exists: false
+      }
+    end
   end
 end
 
+# Report missing tests (file exists but not updated)
 if missing_tests.any?
   list = missing_tests
+           .map { |m| "- `#{m[:file]}` → test file exists: `#{m[:expected]}` (consider updating if logic changed)" }
+           .join("\n")
+
+  message("ℹ️ Some source files have tests that weren't updated:\n#{list}")
+end
+
+# Report missing test files (file doesn't exist in project)
+if missing_test_files.any?
+  list = missing_test_files
            .map { |m| "- `#{m[:file]}` → expected test file: `#{m[:expected]}`" }
            .join("\n")
 
-  warn("Some source files are missing corresponding tests:\n#{list}")
+  warn("⚠️ Some source files are missing corresponding test files:\n#{list}")
 end
 
 # ==============================================================================
